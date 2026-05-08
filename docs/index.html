@@ -2,239 +2,458 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
-<title>서울 15억 미만 아파트 지도</title>
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<meta name="description" content="서울 15억 미만 아파트 9,268개를 지도에 시각화. 가격·평형·세대·거래일자 필터." />
+<title>서울 아파트 지도</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+<meta name="description" content="서울 아파트 단지를 지도에 시각화. 가격·평형·세대수·거래시점 필터." />
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <style>
-  html,body{margin:0;height:100%;font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;}
-  #map{position:absolute;inset:0;}
-  #panel{
-    position:absolute;top:12px;left:12px;z-index:1000;
-    background:rgba(255,255,255,.97);padding:14px 16px;border-radius:10px;
-    box-shadow:0 4px 14px rgba(0,0,0,.18);width:320px;max-height:calc(100vh - 32px);
-    overflow-y:auto;
+  :root{
+    --bg:#f7f8fa; --panel:#fff; --ink:#0f172a; --ink-2:#475569; --ink-3:#94a3b8;
+    --line:#e2e8f0; --line-2:#f1f5f9; --accent:#0a66ff; --accent-50:#eaf2ff;
+    --shadow:0 1px 2px rgba(15,23,42,.04), 0 4px 16px rgba(15,23,42,.08);
+    --shadow-lg:0 10px 32px rgba(15,23,42,.14);
+    --radius:12px; --radius-sm:8px;
   }
-  #panel h2{margin:0 0 8px;font-size:15px}
-  #panel .stat{font-size:12px;color:#444;margin:2px 0}
-  #panel .row{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px}
-  #panel input[type=range]{flex:1}
-  #panel select{padding:3px 4px;font-size:12px;border:1px solid #ddd;border-radius:4px}
-  #panel button.preset{flex:1;padding:3px 0;font-size:10px;border:1px solid #ddd;background:#fafafa;border-radius:4px;cursor:pointer}
-  #panel button.preset:hover{background:#eef5ff;border-color:#88b}
-  #panel button.preset.active{background:#1976d2;color:#fff;border-color:#1976d2}
-  #panel .toggle{cursor:pointer;display:flex;justify-content:space-between;font-size:11px;color:#666;margin-top:4px;padding:3px 0;border-top:1px dashed #ddd}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;font-family:-apple-system,'Apple SD Gothic Neo',-apple-system,BlinkMacSystemFont,sans-serif;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
+  #map{position:absolute;inset:0;z-index:1}
+
+  /* Top header */
+  .header{
+    position:absolute;top:14px;left:14px;right:14px;z-index:1000;
+    display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+  }
+  .brand{
+    display:flex;align-items:center;gap:8px;
+    background:var(--panel);padding:9px 14px;border-radius:var(--radius);
+    box-shadow:var(--shadow);font-weight:700;font-size:14px;
+  }
+  .brand .dot{width:6px;height:6px;border-radius:50%;background:var(--accent)}
+  .brand .count{font-weight:500;color:var(--ink-2);margin-left:4px;font-size:12px}
+  .brand .count b{color:var(--ink);font-weight:700}
+
+  /* Filter pills */
+  .filters{display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0}
+  .pill{
+    display:inline-flex;align-items:center;gap:6px;
+    background:var(--panel);padding:8px 14px;border-radius:999px;
+    box-shadow:var(--shadow);font-size:13px;font-weight:500;color:var(--ink-2);
+    border:1px solid transparent;cursor:pointer;white-space:nowrap;
+    transition:.12s all;user-select:none;
+  }
+  .pill:hover{background:#f8fafc;color:var(--ink)}
+  .pill.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .pill.active .ic{stroke:#fff}
+  .pill .ic{width:14px;height:14px;stroke:var(--ink-3);stroke-width:2;fill:none}
+  .pill .chev{margin-left:2px;opacity:.5}
+
+  /* Popover */
+  .pop{
+    position:absolute;top:calc(100% + 8px);left:0;z-index:1100;
+    background:var(--panel);border-radius:var(--radius);box-shadow:var(--shadow-lg);
+    padding:18px;min-width:300px;max-width:340px;
+    border:1px solid var(--line);
+    display:none;
+  }
+  .pop.show{display:block}
+  .pop h3{margin:0 0 12px;font-size:13px;font-weight:600;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em}
+  .pop .vals{display:flex;justify-content:space-between;font-size:13px;color:var(--ink);margin-bottom:8px;font-weight:500}
+  .pop .vals b{font-weight:700;color:var(--accent)}
+  .pop input[type=range]{width:100%;-webkit-appearance:none;height:4px;background:var(--line);border-radius:2px;outline:none;margin:0}
+  .pop input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:16px;height:16px;background:#fff;border:2px solid var(--accent);border-radius:50%;cursor:pointer;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+  .pop input[type=range]::-moz-range-thumb{width:16px;height:16px;background:#fff;border:2px solid var(--accent);border-radius:50%;cursor:pointer}
+  .range-row{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+  .range-row:last-child{margin-bottom:0}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .chip{
+    padding:6px 12px;border-radius:999px;border:1px solid var(--line);
+    background:var(--panel);font-size:12px;cursor:pointer;color:var(--ink-2);
+    transition:.12s all;
+  }
+  .chip:hover{border-color:var(--ink-3);color:var(--ink)}
+  .chip.on{background:var(--accent-50);color:var(--accent);border-color:var(--accent)}
+  .pop select{
+    width:100%;padding:9px 10px;font-size:13px;border:1px solid var(--line);
+    border-radius:var(--radius-sm);background:var(--panel);color:var(--ink);outline:none;
+    -webkit-appearance:none;appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 10px center;padding-right:30px;
+  }
+  .pop .actions{display:flex;justify-content:space-between;margin-top:14px;padding-top:14px;border-top:1px solid var(--line-2)}
+  .btn-clear{background:none;border:none;color:var(--ink-2);font-size:12px;cursor:pointer;padding:0}
+  .btn-clear:hover{color:var(--ink)}
+  .btn-apply{background:var(--accent);color:#fff;border:none;padding:6px 14px;border-radius:var(--radius-sm);font-size:12px;font-weight:600;cursor:pointer}
+
+  /* Legend */
   .legend{
-    position:absolute;bottom:18px;right:14px;z-index:1000;
-    background:rgba(255,255,255,.96);padding:10px 14px;border-radius:10px;
-    box-shadow:0 4px 14px rgba(0,0,0,.12);font-size:11px;
+    position:absolute;bottom:18px;right:18px;z-index:1000;
+    background:var(--panel);padding:12px 14px;border-radius:var(--radius);box-shadow:var(--shadow);font-size:11px;
   }
-  .legend .bar{height:10px;width:200px;border-radius:6px;
+  .legend .ttl{font-weight:600;margin-bottom:6px;font-size:11px;color:var(--ink-2);text-transform:uppercase;letter-spacing:.04em}
+  .legend .bar{height:8px;width:200px;border-radius:4px;
     background:linear-gradient(to right,#1a9850,#a6d96a,#fee08b,#fdae61,#f46d43,#d73027);}
-  .legend .ticks{display:flex;justify-content:space-between;margin-top:3px;color:#444}
-  .leaflet-popup-content{font-size:12px;line-height:1.55;min-width:260px}
-  .leaflet-popup-content .nm{font-weight:700;font-size:14px;margin-bottom:5px}
-  .leaflet-popup-content .row{display:flex;justify-content:space-between;margin:1px 0}
-  .leaflet-popup-content .row span:first-child{color:#777}
-  .leaflet-popup-content a{display:inline-block;margin-top:7px;color:#1976d2;text-decoration:none;font-weight:500}
-  .badge{display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;margin-left:4px}
-  .badge.recent{background:#e3f7e8;color:#2c7a3a}
-  .badge.old{background:#fef0e0;color:#a35b00}
-  .badge.never{background:#f3f3f3;color:#888}
-  #count{font-weight:700;color:#1976d2}
-  #loader{position:absolute;inset:0;background:rgba(255,255,255,.85);z-index:9999;display:flex;align-items:center;justify-content:center;font-size:14px;color:#555}
-  .footer{font-size:10px;color:#888;margin-top:8px;line-height:1.4}
-  .footer a{color:#1976d2;text-decoration:none}
+  .legend .ticks{display:flex;justify-content:space-between;margin-top:5px;color:var(--ink-3);font-size:10px}
+  .legend .meta{margin-top:8px;padding-top:8px;border-top:1px solid var(--line-2);color:var(--ink-3);font-size:10px;line-height:1.4}
+  .legend .meta a{color:var(--accent);text-decoration:none}
+
+  /* Popup */
+  .leaflet-popup-content-wrapper{border-radius:var(--radius)!important;box-shadow:var(--shadow-lg)!important;padding:0!important}
+  .leaflet-popup-content{margin:0!important;font-size:12px;line-height:1.55;width:280px!important}
+  .pp{padding:14px 16px}
+  .pp .nm{font-weight:700;font-size:15px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px}
+  .pp .nm .name{flex:1;color:var(--ink)}
+  .badge{display:inline-block;padding:2px 7px;border-radius:8px;font-size:10px;font-weight:600;flex-shrink:0;margin-top:1px}
+  .badge.recent{background:#dcfce7;color:#15803d}
+  .badge.old{background:#fef3c7;color:#a16207}
+  .badge.never{background:var(--line-2);color:var(--ink-3)}
+  .pp .price{font-size:20px;font-weight:800;color:var(--ink);margin-bottom:2px}
+  .pp .price .floor{font-size:11px;font-weight:500;color:var(--ink-3);margin-left:6px}
+  .pp .sub{font-size:11px;color:var(--ink-3);margin-bottom:12px}
+  .pp .grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;font-size:11px;margin-bottom:12px}
+  .pp .grid .k{color:var(--ink-3);font-size:10px;margin-bottom:1px}
+  .pp .grid .v{color:var(--ink);font-weight:500}
+  .pp a.go{display:block;text-align:center;background:var(--accent);color:#fff;padding:8px 12px;border-radius:var(--radius-sm);text-decoration:none;font-weight:600;font-size:12px}
+  .pp a.go:hover{filter:brightness(.95)}
+
+  /* Loader */
+  #loader{position:absolute;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--ink-2)}
+  #loader .spin{width:18px;height:18px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin-right:10px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* Mobile */
+  @media (max-width:640px){
+    .header{top:8px;left:8px;right:8px;gap:6px}
+    .brand{padding:8px 11px;font-size:13px}
+    .pill{padding:7px 11px;font-size:12px}
+    .pop{position:fixed;top:auto;bottom:0;left:0;right:0;border-radius:16px 16px 0 0;max-width:none;width:100%;max-height:70vh;overflow-y:auto}
+    .legend{display:none}
+    .filters{gap:5px}
+  }
 </style>
 </head>
 <body>
-<div id="loader">데이터 로드 중… (3.4MB)</div>
-<div id="panel">
-  <h2>서울 15억 미만 아파트 <span style="font-weight:400;font-size:11px;color:#888">v2</span></h2>
-  <div class="stat">표시: <span id="count">…</span> / <span id="total">…</span>개</div>
+<div id="loader"><div class="spin"></div>지도 로드 중…</div>
 
-  <div class="row"><span style="width:60px">실거래가</span>
-    <input id="price-min" type="range" min="0" max="150000" step="5000" value="0">
-    <input id="price-max" type="range" min="0" max="150000" step="5000" value="150000">
-  </div>
-  <div class="stat" id="price-label">0 ~ 15.0억</div>
-
-  <div class="row"><span style="width:60px">전용</span>
-    <input id="area-min" type="range" min="0" max="200" step="5" value="0">
-    <input id="area-max" type="range" min="0" max="200" step="5" value="200">
-  </div>
-  <div class="stat" id="area-label">전체 평형</div>
-
-  <div class="row"><span style="width:60px">세대</span>
-    <input id="hh-min" type="range" min="0" max="3000" step="50" value="0">
-    <input id="hh-max" type="range" min="0" max="3000" step="50" value="3000">
-  </div>
-  <div class="stat" id="hh-label">전체 세대수</div>
-  <div class="row" style="gap:4px;margin-top:-2px">
-    <button data-hh="0,3000" class="preset">전체</button>
-    <button data-hh="0,99" class="preset">~100</button>
-    <button data-hh="100,299" class="preset">100-300</button>
-    <button data-hh="300,999" class="preset">300-1000</button>
-    <button data-hh="1000,3000" class="preset">대단지</button>
-  </div>
-
-  <div class="row"><span style="width:60px">자치구</span>
-    <select id="sigungu" style="flex:1"><option value="">전체</option></select>
-  </div>
-
-  <div class="row"><span style="width:60px">거래</span>
-    <select id="recency" style="flex:1">
-      <option value="all">전체 (역대 최고가 기준)</option>
-      <option value="6">6개월 이내 거래</option>
-      <option value="12" selected>1년 이내 거래</option>
-      <option value="24">2년 이내 거래</option>
-      <option value="60">5년 이내 거래</option>
-      <option value="never">거래 한 번도 없음</option>
-    </select>
-  </div>
-
-  <div class="footer">
-    가격 = 역대 실거래 최고가 (단위 만원)<br>
-    원 색상 = 가격대, 원 크기 = 세대수<br>
-    데이터: <a href="https://hogangnono.com" target="_blank">호갱노노</a> · <span id="dataDate">—</span> 기준<br>
-    <a href="https://github.com" target="_blank" id="repoLink">GitHub repo</a>
+<div class="header">
+  <div class="brand"><span class="dot"></span>서울 아파트<span class="count">· <b id="count">…</b> / <span id="total">…</span></span></div>
+  <div class="filters">
+    <button class="pill" data-pop="price"><svg class="ic" viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span id="lbl-price">가격</span><span class="chev">▾</span></button>
+    <button class="pill" data-pop="area"><svg class="ic" viewBox="0 0 24 24"><path d="M3 3h18v18H3zM3 9h18M9 21V9"/></svg><span id="lbl-area">평형</span><span class="chev">▾</span></button>
+    <button class="pill" data-pop="hh"><svg class="ic" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l8-4 8 4v14M9 9v.01M15 9v.01M9 13v.01M15 13v.01M9 17v.01M15 17v.01"/></svg><span id="lbl-hh">세대</span><span class="chev">▾</span></button>
+    <button class="pill" data-pop="rec"><svg class="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span id="lbl-rec">거래시점</span><span class="chev">▾</span></button>
+    <button class="pill" data-pop="sgg"><svg class="ic" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><span id="lbl-sgg">지역</span><span class="chev">▾</span></button>
+    <button class="pill" id="btn-reset" style="background:transparent;box-shadow:none;color:var(--ink-3)">필터 초기화</button>
   </div>
 </div>
 
+<!-- Popovers -->
+<div class="pop" id="pop-price">
+  <h3>실거래 최고가</h3>
+  <div class="vals"><span><b id="pv-min">0</b>억</span><span><b id="pv-max">15</b>억</span></div>
+  <div class="range-row">
+    <input id="price-min" type="range" min="0" max="150000" step="5000" value="0">
+    <input id="price-max" type="range" min="0" max="150000" step="5000" value="150000">
+  </div>
+  <div class="chips">
+    <button class="chip" data-price="0,30000">~3억</button>
+    <button class="chip" data-price="30000,50000">3~5억</button>
+    <button class="chip" data-price="50000,70000">5~7억</button>
+    <button class="chip" data-price="70000,100000">7~10억</button>
+    <button class="chip" data-price="100000,150000">10~15억</button>
+  </div>
+</div>
+
+<div class="pop" id="pop-area">
+  <h3>전용 면적</h3>
+  <div class="vals"><span><b id="av-min">0</b>㎡</span><span><b id="av-max">200</b>㎡</span></div>
+  <div class="range-row">
+    <input id="area-min" type="range" min="0" max="200" step="5" value="0">
+    <input id="area-max" type="range" min="0" max="200" step="5" value="200">
+  </div>
+  <div class="chips">
+    <button class="chip" data-area="0,40">소형(~12평)</button>
+    <button class="chip" data-area="40,60">중소(12~18평)</button>
+    <button class="chip" data-area="60,85">중형(18~26평)</button>
+    <button class="chip" data-area="85,135">중대(26~40평)</button>
+    <button class="chip" data-area="135,200">대형(40평+)</button>
+  </div>
+</div>
+
+<div class="pop" id="pop-hh">
+  <h3>세대수</h3>
+  <div class="vals"><span><b id="hv-min">0</b></span><span><b id="hv-max">3000+</b></span></div>
+  <div class="range-row">
+    <input id="hh-min" type="range" min="0" max="3000" step="50" value="0">
+    <input id="hh-max" type="range" min="0" max="3000" step="50" value="3000">
+  </div>
+  <div class="chips">
+    <button class="chip" data-hh="0,99">소규모(~100)</button>
+    <button class="chip" data-hh="100,299">100~300</button>
+    <button class="chip" data-hh="300,999">300~1000</button>
+    <button class="chip" data-hh="1000,3000">대단지(1000+)</button>
+  </div>
+</div>
+
+<div class="pop" id="pop-rec">
+  <h3>마지막 실거래</h3>
+  <div class="chips" style="margin-top:0;flex-direction:column;align-items:stretch">
+    <button class="chip" data-rec="all" style="text-align:left">전체 (역대 최고가 기준)</button>
+    <button class="chip" data-rec="6" style="text-align:left">최근 6개월</button>
+    <button class="chip" data-rec="12" style="text-align:left">최근 1년</button>
+    <button class="chip" data-rec="24" style="text-align:left">최근 2년</button>
+    <button class="chip" data-rec="60" style="text-align:left">최근 5년</button>
+    <button class="chip" data-rec="never" style="text-align:left">거래 한 번도 없음</button>
+  </div>
+</div>
+
+<div class="pop" id="pop-sgg">
+  <h3>지역</h3>
+  <div class="chips" id="sgg-chips" style="margin-top:0"></div>
+</div>
+
 <div id="map"></div>
+
 <div class="legend">
-  <div style="margin-bottom:4px;font-weight:600">실거래 최고가</div>
+  <div class="ttl">실거래 최고가</div>
   <div class="bar"></div>
   <div class="ticks"><span>0억</span><span>3</span><span>6</span><span>9</span><span>12</span><span>15억</span></div>
+  <div class="meta">
+    원 크기 = 세대수 · <a href="https://hogangnono.com" target="_blank">호갱노노</a> 데이터
+  </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const map = L.map('map', { preferCanvas: true }).setView([37.55, 126.99], 12);
+const map = L.map('map', { preferCanvas: true, zoomControl: false }).setView([37.55, 126.99], 12);
+L.control.zoom({position:'bottomleft'}).addTo(map);
 L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-  attribution: '&copy; OpenStreetMap &copy; CARTO',
+  attribution: '&copy; OSM &copy; CARTO',
   subdomains: 'abcd', maxZoom: 20,
 }).addTo(map);
 
-function priceColor(p) {
-  const stops = [[0,[26,152,80]],[30000,[166,217,106]],[60000,[254,224,139]],[90000,[253,174,97]],[120000,[244,109,67]],[150000,[215,48,39]]];
-  for (let i=1;i<stops.length;i++){
-    if (p <= stops[i][0]) {
-      const [p0,c0]=stops[i-1],[p1,c1]=stops[i],t=(p-p0)/(p1-p0);
-      return `rgb(${Math.round(c0[0]+(c1[0]-c0[0])*t)},${Math.round(c0[1]+(c1[1]-c0[1])*t)},${Math.round(c0[2]+(c1[2]-c0[2])*t)})`;
-    }
-  }
-  return 'rgb(215,48,39)';
+function priceColor(p){
+  const stops=[[0,[26,152,80]],[30000,[166,217,106]],[60000,[254,224,139]],[90000,[253,174,97]],[120000,[244,109,67]],[150000,[215,48,39]]];
+  for(let i=1;i<stops.length;i++){
+    if(p<=stops[i][0]){const[p0,c0]=stops[i-1],[p1,c1]=stops[i],t=(p-p0)/(p1-p0);
+      return `rgb(${Math.round(c0[0]+(c1[0]-c0[0])*t)},${Math.round(c0[1]+(c1[1]-c0[1])*t)},${Math.round(c0[2]+(c1[2]-c0[2])*t)})`;}
+  } return 'rgb(215,48,39)';
 }
-function householdRadius(h) { return !h ? 4 : Math.max(3, Math.min(20, Math.sqrt(h)*0.5+3)); }
-function fmtPrice(p) { if (!p) return '-'; const e = p/10000; return e>=10 ? e.toFixed(1)+'억' : e.toFixed(2)+'억'; }
-function fmtArea(m) { if (!m) return '-'; return `${m.toFixed(0)}㎡(${(m/3.305785).toFixed(1)}평)`; }
-function monthsAgo(s) { if (!s) return null; const d = new Date(s); if (isNaN(d)) return null; return (Date.now()-d)/2592000000; }
-function recencyBadge(m) {
-  if (m === null) return '<span class="badge never">거래 없음</span>';
-  if (m <= 12) return `<span class="badge recent">${Math.round(m)}개월 전</span>`;
+function hhRadius(h){return !h?4:Math.max(3,Math.min(20,Math.sqrt(h)*0.5+3));}
+function fmtPrice(p){if(!p)return '-';const e=p/10000;return e>=10?e.toFixed(1)+'억':e.toFixed(2)+'억';}
+function fmtArea(m){if(!m)return '-';return `${m.toFixed(0)}㎡(${(m/3.305785).toFixed(1)}평)`;}
+function monthsAgo(s){if(!s)return null;const d=new Date(s);if(isNaN(d))return null;return (Date.now()-d)/2592000000;}
+
+const state = {
+  pmin:0, pmax:150000,
+  amin:0, amax:200,
+  hhmin:0, hhmax:3000,
+  rec:'all', sgg:'',
+};
+let allApts=[];
+const layer=L.layerGroup().addTo(map);
+
+function badge(m){
+  if(m===null) return `<span class="badge never">미거래</span>`;
+  if(m<=12) return `<span class="badge recent">${Math.round(m)}개월 전</span>`;
   return `<span class="badge old">${(m/12).toFixed(1)}년 전</span>`;
 }
 
-let allApts = [];
-const layer = L.layerGroup().addTo(map);
-
-function render() {
+function render(){
   layer.clearLayers();
-  const pmin = +document.getElementById('price-min').value;
-  const pmax = +document.getElementById('price-max').value;
-  const amin = +document.getElementById('area-min').value;
-  const amax = +document.getElementById('area-max').value;
-  const hhmin = +document.getElementById('hh-min').value;
-  const hhmax = +document.getElementById('hh-max').value;
-  const sgg = document.getElementById('sigungu').value;
-  const rec = document.getElementById('recency').value;
-
-  let n = 0;
-  for (const v of allApts) {
-    if (v.maxP < pmin || v.maxP > pmax) continue;
-    if (v.pa && (v.pa < amin || (amax<200 && v.pa > amax))) continue;
-    const hh = v.hh || 0;
-    if (hh < hhmin) continue;
-    if (hhmax < 3000 && hh > hhmax) continue;
-    if (sgg && v.sgg !== sgg) continue;
-    if (rec !== 'all') {
-      const m = monthsAgo(v.date);
-      if (rec === 'never') { if (m !== null) continue; }
-      else { const lim = +rec; if (m === null || m > lim) continue; }
+  let n=0;
+  for(const v of allApts){
+    if(v.maxP < state.pmin || v.maxP > state.pmax) continue;
+    if(v.pa && (v.pa < state.amin || (state.amax<200 && v.pa > state.amax))) continue;
+    const hh=v.hh||0;
+    if(hh < state.hhmin) continue;
+    if(state.hhmax < 3000 && hh > state.hhmax) continue;
+    if(state.sgg && v.sgg !== state.sgg) continue;
+    if(state.rec !== 'all'){
+      const m=monthsAgo(v.date);
+      if(state.rec==='never'){if(m!==null)continue;}
+      else{const lim=+state.rec;if(m===null||m>lim)continue;}
     }
-    const cm = L.circleMarker([v.lat, v.lng], {
-      radius: householdRadius(v.hh),
-      color: priceColor(v.maxP), fillColor: priceColor(v.maxP),
-      fillOpacity: 0.7, weight: 1, opacity: 0.9,
+    const cm=L.circleMarker([v.lat,v.lng],{
+      radius:hhRadius(v.hh), color:priceColor(v.maxP), fillColor:priceColor(v.maxP),
+      fillOpacity:.72, weight:1, opacity:.9,
     });
-    const m = monthsAgo(v.date);
-    cm.bindPopup(`
-      <div class="nm">${v.name||'?'} ${recencyBadge(m)}</div>
-      <div class="row"><span>주소</span><span>${v.addr||''}</span></div>
-      <div class="row"><span>실거래 최고가</span><span><b>${fmtPrice(v.maxP)}</b>${v.fl?` (${v.fl}층)`:''}</span></div>
-      <div class="row"><span>최고가 거래일</span><span>${v.date||'-'}</span></div>
-      <div class="row"><span>전세 최고</span><span>${fmtPrice(v.rentP)}</span></div>
-      <div class="row"><span>공시가</span><span>${fmtPrice(v.offP)}</span></div>
-      <div class="row"><span>전용/공급</span><span>${fmtArea(v.pa)} / ${fmtArea(v.sa)}</span></div>
-      <div class="row"><span>세대수</span><span>${v.hh||'-'}세대${v.flMax?` (${v.flMax}층)`:''}</span></div>
-      <div class="row"><span>입주</span><span>${v.yr||'-'}</span></div>
-      <div class="row"><span>거래수(최근/전체)</span><span>${v.tcR??'-'} / ${v.tcA??'-'}</span></div>
-      <div class="row"><span>난방/구조</span><span>${v.heat||'-'} / ${v.aisle||'-'}</span></div>
-      ${v.co?`<div class="row"><span>시공</span><span>${v.co}</span></div>`:''}
-      <a href="https://hogangnono.com/apt/${v.id}" target="_blank">호갱노노에서 보기 →</a>
-    `, {maxWidth:300});
+    const ma=monthsAgo(v.date);
+    cm.bindPopup(`<div class="pp">
+      <div class="nm"><span class="name">${v.name||'?'}</span>${badge(ma)}</div>
+      <div class="price">${fmtPrice(v.maxP)}${v.fl?`<span class="floor">${v.fl}층</span>`:''}</div>
+      <div class="sub">${v.sgg||''} ${v.dong||''} · ${v.addr||''}</div>
+      <div class="grid">
+        <div><div class="k">전용</div><div class="v">${fmtArea(v.pa)}</div></div>
+        <div><div class="k">공급</div><div class="v">${fmtArea(v.sa)}</div></div>
+        <div><div class="k">세대수</div><div class="v">${v.hh||'-'}세대${v.flMax?` (${v.flMax}층)`:''}</div></div>
+        <div><div class="k">입주</div><div class="v">${v.yr||'-'}</div></div>
+        <div><div class="k">전세 최고</div><div class="v">${fmtPrice(v.rentP)}</div></div>
+        <div><div class="k">공시가</div><div class="v">${fmtPrice(v.offP)}</div></div>
+        <div><div class="k">최고가 거래일</div><div class="v">${v.date||'-'}</div></div>
+        <div><div class="k">거래수(최근/전체)</div><div class="v">${v.tcR??'-'} / ${v.tcA??'-'}</div></div>
+      </div>
+      <a class="go" href="https://hogangnono.com/apt/${v.id}" target="_blank">호갱노노에서 보기 →</a>
+    </div>`,{maxWidth:300});
     layer.addLayer(cm);
     n++;
   }
-  document.getElementById('count').textContent = n.toLocaleString();
+  document.getElementById('count').textContent=n.toLocaleString();
 }
 
-function bindControls() {
-  const ids = ['price-min','price-max','area-min','area-max','hh-min','hh-max','sigungu','recency'];
-  function update() {
-    const pmin = document.getElementById('price-min'),
-          pmax = document.getElementById('price-max'),
-          amin = document.getElementById('area-min'),
-          amax = document.getElementById('area-max'),
-          hhmin = document.getElementById('hh-min'),
-          hhmax = document.getElementById('hh-max');
-    if (+pmin.value > +pmax.value) [pmin.value, pmax.value] = [pmax.value, pmin.value];
-    if (+amin.value > +amax.value) [amin.value, amax.value] = [amax.value, amin.value];
-    if (+hhmin.value > +hhmax.value) [hhmin.value, hhmax.value] = [hhmax.value, hhmin.value];
-    document.getElementById('price-label').textContent = `${(+pmin.value/10000).toFixed(1)}억 ~ ${(+pmax.value/10000).toFixed(1)}억`;
-    document.getElementById('area-label').textContent = (+amin.value === 0 && +amax.value === 200) ? '전체 평형'
-      : `전용 ${amin.value}㎡ ~ ${amax.value}㎡ (${(amin.value/3.305785).toFixed(0)}~${(amax.value/3.305785).toFixed(0)}평)`;
-    document.getElementById('hh-label').textContent =
-      (+hhmin.value === 0 && +hhmax.value === 3000) ? '전체 세대수'
-      : (+hhmax.value === 3000) ? `${hhmin.value}세대 이상`
-      : `${hhmin.value} ~ ${hhmax.value}세대`;
-    const cur = `${+hhmin.value},${+hhmax.value}`;
-    document.querySelectorAll('.preset').forEach(b => b.classList.toggle('active', b.dataset.hh === cur));
-    render();
+function updateLabels(){
+  // price
+  const pmin = state.pmin, pmax = state.pmax;
+  document.getElementById('pv-min').textContent = (pmin/10000).toFixed(pmin%10000===0?0:1);
+  document.getElementById('pv-max').textContent = (pmax/10000).toFixed(pmax%10000===0?0:1);
+  const lblP = (pmin===0 && pmax===150000) ? '가격'
+    : `${(pmin/10000).toFixed(0)}~${(pmax/10000).toFixed(0)}억`;
+  document.getElementById('lbl-price').textContent = lblP;
+  document.querySelector('[data-pop=price]').classList.toggle('active', !(pmin===0 && pmax===150000));
+  // area
+  document.getElementById('av-min').textContent = state.amin;
+  document.getElementById('av-max').textContent = state.amax;
+  const lblA = (state.amin===0 && state.amax===200) ? '평형'
+    : `${(state.amin/3.305785).toFixed(0)}~${(state.amax/3.305785).toFixed(0)}평`;
+  document.getElementById('lbl-area').textContent = lblA;
+  document.querySelector('[data-pop=area]').classList.toggle('active', !(state.amin===0 && state.amax===200));
+  // hh
+  document.getElementById('hv-min').textContent = state.hhmin;
+  document.getElementById('hv-max').textContent = state.hhmax === 3000 ? '3000+' : state.hhmax;
+  const lblH = (state.hhmin===0 && state.hhmax===3000) ? '세대'
+    : (state.hhmax===3000) ? `${state.hhmin}세대+` : `${state.hhmin}~${state.hhmax}세대`;
+  document.getElementById('lbl-hh').textContent = lblH;
+  document.querySelector('[data-pop=hh]').classList.toggle('active', !(state.hhmin===0 && state.hhmax===3000));
+  // rec
+  const recLabels = {all:'거래시점', '6':'최근 6개월', '12':'최근 1년', '24':'최근 2년', '60':'최근 5년', never:'미거래만'};
+  document.getElementById('lbl-rec').textContent = recLabels[state.rec] || '거래시점';
+  document.querySelector('[data-pop=rec]').classList.toggle('active', state.rec !== 'all');
+  // sgg
+  document.getElementById('lbl-sgg').textContent = state.sgg || '지역';
+  document.querySelector('[data-pop=sgg]').classList.toggle('active', !!state.sgg);
+  // chips highlight
+  document.querySelectorAll('[data-price]').forEach(b => {
+    const [lo, hi] = b.dataset.price.split(',').map(Number);
+    b.classList.toggle('on', lo === pmin && hi === pmax);
+  });
+  document.querySelectorAll('[data-area]').forEach(b => {
+    const [lo, hi] = b.dataset.area.split(',').map(Number);
+    b.classList.toggle('on', lo === state.amin && hi === state.amax);
+  });
+  document.querySelectorAll('[data-hh]').forEach(b => {
+    const [lo, hi] = b.dataset.hh.split(',').map(Number);
+    b.classList.toggle('on', lo === state.hhmin && hi === state.hhmax);
+  });
+  document.querySelectorAll('[data-rec]').forEach(b => b.classList.toggle('on', b.dataset.rec === state.rec));
+}
+
+function bindRange(idMin, idMax, key){
+  const a = document.getElementById(idMin), b = document.getElementById(idMax);
+  function sync(){
+    if(+a.value > +b.value){[a.value,b.value]=[b.value,a.value];}
+    state[key+'min'] = +a.value;
+    state[key+'max'] = +b.value;
+    updateLabels(); render();
   }
-  ids.forEach(i => { const el = document.getElementById(i); el.addEventListener('input', update); el.addEventListener('change', update); });
-  document.querySelectorAll('.preset').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const [lo, hi] = btn.dataset.hh.split(',').map(Number);
-      document.getElementById('hh-min').value = lo;
-      document.getElementById('hh-max').value = hi;
-      update();
+  a.addEventListener('input', sync);
+  b.addEventListener('input', sync);
+}
+
+function setupPopovers(){
+  document.querySelectorAll('.pill[data-pop]').forEach(p => {
+    p.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = 'pop-' + p.dataset.pop;
+      const pop = document.getElementById(id);
+      const isOpen = pop.classList.contains('show');
+      document.querySelectorAll('.pop').forEach(o => o.classList.remove('show'));
+      if(!isOpen){
+        pop.classList.add('show');
+        // position below pill
+        const r = p.getBoundingClientRect();
+        if(window.innerWidth > 640){
+          pop.style.top = (r.bottom + 8) + 'px';
+          pop.style.left = Math.min(r.left, window.innerWidth - 360) + 'px';
+        }
+      }
     });
   });
-  update();
+  document.addEventListener('click', e => {
+    if(!e.target.closest('.pop') && !e.target.closest('.pill[data-pop]')){
+      document.querySelectorAll('.pop').forEach(o => o.classList.remove('show'));
+    }
+  });
+}
+
+function bindControls(){
+  bindRange('price-min', 'price-max', 'p');
+  bindRange('area-min', 'area-max', 'a');
+  bindRange('hh-min', 'hh-max', 'hh');
+  // chip presets
+  document.querySelectorAll('[data-price]').forEach(b => b.addEventListener('click', () => {
+    const [lo, hi] = b.dataset.price.split(',').map(Number);
+    state.pmin = lo; state.pmax = hi;
+    document.getElementById('price-min').value = lo;
+    document.getElementById('price-max').value = hi;
+    updateLabels(); render();
+  }));
+  document.querySelectorAll('[data-area]').forEach(b => b.addEventListener('click', () => {
+    const [lo, hi] = b.dataset.area.split(',').map(Number);
+    state.amin = lo; state.amax = hi;
+    document.getElementById('area-min').value = lo;
+    document.getElementById('area-max').value = hi;
+    updateLabels(); render();
+  }));
+  document.querySelectorAll('[data-hh]').forEach(b => b.addEventListener('click', () => {
+    const [lo, hi] = b.dataset.hh.split(',').map(Number);
+    state.hhmin = lo; state.hhmax = hi;
+    document.getElementById('hh-min').value = lo;
+    document.getElementById('hh-max').value = hi;
+    updateLabels(); render();
+  }));
+  document.querySelectorAll('[data-rec]').forEach(b => b.addEventListener('click', () => {
+    state.rec = b.dataset.rec;
+    updateLabels(); render();
+    document.getElementById('pop-rec').classList.remove('show');
+  }));
+  document.getElementById('btn-reset').addEventListener('click', () => {
+    state.pmin=0; state.pmax=150000;
+    state.amin=0; state.amax=200;
+    state.hhmin=0; state.hhmax=3000;
+    state.rec='all'; state.sgg='';
+    document.getElementById('price-min').value=0;
+    document.getElementById('price-max').value=150000;
+    document.getElementById('area-min').value=0;
+    document.getElementById('area-max').value=200;
+    document.getElementById('hh-min').value=0;
+    document.getElementById('hh-max').value=3000;
+    updateLabels(); render();
+  });
 }
 
 fetch('data.json').then(r => r.json()).then(data => {
   allApts = data;
   document.getElementById('total').textContent = data.length.toLocaleString();
-  const sggs = [...new Set(allApts.map(v=>v.sgg).filter(Boolean))].sort();
-  const sel = document.getElementById('sigungu');
-  for (const s of sggs) { const o = document.createElement('option'); o.value=s; o.textContent=s; sel.appendChild(o); }
-  // approx data date = most recent date_max_real_trade
-  const dates = data.map(v => v.date).filter(Boolean).sort();
-  if (dates.length) document.getElementById('dataDate').textContent = '최신 거래 ' + dates[dates.length-1];
+  // populate sgg chips
+  const sggs = [...new Set(allApts.map(v => v.sgg).filter(Boolean))].sort();
+  const sggBox = document.getElementById('sgg-chips');
+  const allChip = document.createElement('button');
+  allChip.className = 'chip on'; allChip.textContent = '전체'; allChip.dataset.sgg = '';
+  sggBox.appendChild(allChip);
+  for(const s of sggs){
+    const c = document.createElement('button');
+    c.className = 'chip'; c.textContent = s; c.dataset.sgg = s;
+    sggBox.appendChild(c);
+  }
+  sggBox.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => {
+    state.sgg = b.dataset.sgg;
+    sggBox.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x.dataset.sgg === state.sgg));
+    updateLabels(); render();
+    document.getElementById('pop-sgg').classList.remove('show');
+  }));
+  setupPopovers();
   bindControls();
+  updateLabels();
+  render();
   document.getElementById('loader').remove();
 }).catch(e => {
   document.getElementById('loader').textContent = '데이터 로드 실패: ' + e.message;

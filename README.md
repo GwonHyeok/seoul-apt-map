@@ -1,6 +1,6 @@
 # 호갱노노 OpenAPI + 서울 아파트 시각화
 
-호갱노노(hogangnono.com) 비공식 OpenAPI 스펙(역공학)과 서울 15억 미만 아파트 지도.
+호갱노노(hogangnono.com) 비공식 OpenAPI 스펙(역공학)과 서울 아파트 지도.
 
 ## 라이브 데모
 GitHub Pages 배포 후: `https://<github-username>.github.io/<repo-name>/`
@@ -23,7 +23,7 @@ openapi.yaml              # 호갱노노 비공식 OpenAPI 3.1 스펙 (419 path,
 cd /Users/ghyeok/Developments/hogangnono/openapi-capture
 git init
 git add .gitignore docs/ openapi.yaml crawl_seoul.py README.md
-git commit -m "init: 서울 15억 미만 아파트 지도 + 호갱노노 비공식 OpenAPI"
+git commit -m "init: 서울 아파트 지도 + 호갱노노 비공식 OpenAPI"
 
 # 2) GitHub에 새 repo 만든 뒤
 git remote add origin https://github.com/<username>/<repo>.git
