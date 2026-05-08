@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>서울 15억 미만 아파트 지도</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="description" content="서울 15억 미만 아파트 9,268개를 지도에 시각화. 가격·평형·세대·거래일자 필터." />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  html,body{margin:0;height:100%;font-family:-apple-system,'Apple SD Gothic Neo',sans-serif;}
+  #map{position:absolute;inset:0;}
+  #panel{
+    position:absolute;top:12px;left:12px;z-index:1000;
+    background:rgba(255,255,255,.97);padding:14px 16px;border-radius:10px;
+    box-shadow:0 4px 14px rgba(0,0,0,.18);width:320px;max-height:calc(100vh - 32px);
+    overflow-y:auto;
+  }
+  #panel h2{margin:0 0 8px;font-size:15px}
+  #panel .stat{font-size:12px;color:#444;margin:2px 0}
+  #panel .row{display:flex;align-items:center;gap:8px;margin:6px 0;font-size:12px}
+  #panel input[type=range]{flex:1}
+  #panel select{padding:3px 4px;font-size:12px;border:1px solid #ddd;border-radius:4px}
+  #panel button.preset{flex:1;padding:3px 0;font-size:10px;border:1px solid #ddd;background:#fafafa;border-radius:4px;cursor:pointer}
+  #panel button.preset:hover{background:#eef5ff;border-color:#88b}
+  #panel button.preset.active{background:#1976d2;color:#fff;border-color:#1976d2}
+  #panel .toggle{cursor:pointer;display:flex;justify-content:space-between;font-size:11px;color:#666;margin-top:4px;padding:3px 0;border-top:1px dashed #ddd}
+  .legend{
+    position:absolute;bottom:18px;right:14px;z-index:1000;
+    background:rgba(255,255,255,.96);padding:10px 14px;border-radius:10px;
+    box-shadow:0 4px 14px rgba(0,0,0,.12);font-size:11px;
+  }
+  .legend .bar{height:10px;width:200px;border-radius:6px;
+    background:linear-gradient(to right,#1a9850,#a6d96a,#fee08b,#fdae61,#f46d43,#d73027);}
+  .legend .ticks{display:flex;justify-content:space-between;margin-top:3px;color:#444}
+  .leaflet-popup-content{font-size:12px;line-height:1.55;min-width:260px}
+  .leaflet-popup-content .nm{font-weight:700;font-size:14px;margin-bottom:5px}
+  .leaflet-popup-content .row{display:flex;justify-content:space-between;margin:1px 0}
+  .leaflet-popup-content .row span:first-child{color:#777}
+  .leaflet-popup-content a{display:inline-block;margin-top:7px;color:#1976d2;text-decoration:none;font-weight:500}
+  .badge{display:inline-block;padding:1px 6px;border-radius:8px;font-size:10px;font-weight:600;margin-left:4px}
+  .badge.recent{background:#e3f7e8;color:#2c7a3a}
+  .badge.old{background:#fef0e0;color:#a35b00}
+  .badge.never{background:#f3f3f3;color:#888}
+  #count{font-weight:700;color:#1976d2}
+  #loader{position:absolute;inset:0;background:rgba(255,255,255,.85);z-index:9999;display:flex;align-items:center;justify-content:center;font-size:14px;color:#555}
+  .footer{font-size:10px;color:#888;margin-top:8px;line-height:1.4}
+  .footer a{color:#1976d2;text-decoration:none}
+</style>
+</head>
+<body>
+<div id="loader">데이터 로드 중… (3.4MB)</div>
+<div id="panel">
+  <h2>서울 15억 미만 아파트 <span style="font-weight:400;font-size:11px;color:#888">v2</span></h2>
+  <div class="stat">표시: <span id="count">…</span> / <span id="total">…</span>개</div>
+
+  <div class="row"><span style="width:60px">실거래가</span>
+    <input id="price-min" type="range" min="0" max="150000" step="5000" value="0">
+    <input id="price-max" type="range" min="0" max="150000" step="5000" value="150000">
+  </div>
+  <div class="stat" id="price-label">0 ~ 15.0억</div>
+
+  <div class="row"><span style="width:60px">전용</span>
+    <input id="area-min" type="range" min="0" max="200" step="5" value="0">
+    <input id="area-max" type="range" min="0" max="200" step="5" value="200">
+  </div>
+  <div class="stat" id="area-label">전체 평형</div>
+
+  <div class="row"><span style="width:60px">세대</span>
+    <input id="hh-min" type="range" min="0" max="3000" step="50" value="0">
+    <input id="hh-max" type="range" min="0" max="3000" step="50" value="3000">
+  </div>
+  <div class="stat" id="hh-label">전체 세대수</div>
+  <div class="row" style="gap:4px;margin-top:-2px">
+    <button data-hh="0,3000" class="preset">전체</button>
+    <button data-hh="0,99" class="preset">~100</button>
+    <button data-hh="100,299" class="preset">100-300</button>
+    <button data-hh="300,999" class="preset">300-1000</button>
+    <button data-hh="1000,3000" class="preset">대단지</button>
+  </div>
+
+  <div class="row"><span style="width:60px">자치구</span>
+    <select id="sigungu" style="flex:1"><option value="">전체</option></select>
+  </div>
+
+  <div class="row"><span style="width:60px">거래</span>
+    <select id="recency" style="flex:1">
+      <option value="all">전체 (역대 최고가 기준)</option>
+      <option value="6">6개월 이내 거래</option>
+      <option value="12" selected>1년 이내 거래</option>
+      <option value="24">2년 이내 거래</option>
+      <option value="60">5년 이내 거래</option>
+      <option value="never">거래 한 번도 없음</option>
+    </select>
+  </div>
+
+  <div class="footer">
+    가격 = 역대 실거래 최고가 (단위 만원)<br>
+    원 색상 = 가격대, 원 크기 = 세대수<br>
+    데이터: <a href="https://hogangnono.com" target="_blank">호갱노노</a> · <span id="dataDate">—</span> 기준<br>
+    <a href="https://github.com" target="_blank" id="repoLink">GitHub repo</a>
+  </div>
+</div>
+
+<div id="map"></div>
+<div class="legend">
+  <div style="margin-bottom:4px;font-weight:600">실거래 최고가</div>
+  <div class="bar"></div>
+  <div class="ticks"><span>0억</span><span>3</span><span>6</span><span>9</span><span>12</span><span>15억</span></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map = L.map('map', { preferCanvas: true }).setView([37.55, 126.99], 12);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap &copy; CARTO',
+  subdomains: 'abcd', maxZoom: 20,
+}).addTo(map);
+
+function priceColor(p) {
+  const stops = [[0,[26,152,80]],[30000,[166,217,106]],[60000,[254,224,139]],[90000,[253,174,97]],[120000,[244,109,67]],[150000,[215,48,39]]];
+  for (let i=1;i<stops.length;i++){
+    if (p <= stops[i][0]) {
+      const [p0,c0]=stops[i-1],[p1,c1]=stops[i],t=(p-p0)/(p1-p0);
+      return `rgb(${Math.round(c0[0]+(c1[0]-c0[0])*t)},${Math.round(c0[1]+(c1[1]-c0[1])*t)},${Math.round(c0[2]+(c1[2]-c0[2])*t)})`;
+    }
+  }
+  return 'rgb(215,48,39)';
+}
+function householdRadius(h) { return !h ? 4 : Math.max(3, Math.min(20, Math.sqrt(h)*0.5+3)); }
+function fmtPrice(p) { if (!p) return '-'; const e = p/10000; return e>=10 ? e.toFixed(1)+'억' : e.toFixed(2)+'억'; }
+function fmtArea(m) { if (!m) return '-'; return `${m.toFixed(0)}㎡(${(m/3.305785).toFixed(1)}평)`; }
+function monthsAgo(s) { if (!s) return null; const d = new Date(s); if (isNaN(d)) return null; return (Date.now()-d)/2592000000; }
+function recencyBadge(m) {
+  if (m === null) return '<span class="badge never">거래 없음</span>';
+  if (m <= 12) return `<span class="badge recent">${Math.round(m)}개월 전</span>`;
+  return `<span class="badge old">${(m/12).toFixed(1)}년 전</span>`;
+}
+
+let allApts = [];
+const layer = L.layerGroup().addTo(map);
+
+function render() {
+  layer.clearLayers();
+  const pmin = +document.getElementById('price-min').value;
+  const pmax = +document.getElementById('price-max').value;
+  const amin = +document.getElementById('area-min').value;
+  const amax = +document.getElementById('area-max').value;
+  const hhmin = +document.getElementById('hh-min').value;
+  const hhmax = +document.getElementById('hh-max').value;
+  const sgg = document.getElementById('sigungu').value;
+  const rec = document.getElementById('recency').value;
+
+  let n = 0;
+  for (const v of allApts) {
+    if (v.maxP < pmin || v.maxP > pmax) continue;
+    if (v.pa && (v.pa < amin || (amax<200 && v.pa > amax))) continue;
+    const hh = v.hh || 0;
+    if (hh < hhmin) continue;
+    if (hhmax < 3000 && hh > hhmax) continue;
+    if (sgg && v.sgg !== sgg) continue;
+    if (rec !== 'all') {
+      const m = monthsAgo(v.date);
+      if (rec === 'never') { if (m !== null) continue; }
+      else { const lim = +rec; if (m === null || m > lim) continue; }
+    }
+    const cm = L.circleMarker([v.lat, v.lng], {
+      radius: householdRadius(v.hh),
+      color: priceColor(v.maxP), fillColor: priceColor(v.maxP),
+      fillOpacity: 0.7, weight: 1, opacity: 0.9,
+    });
+    const m = monthsAgo(v.date);
+    cm.bindPopup(`
+      <div class="nm">${v.name||'?'} ${recencyBadge(m)}</div>
+      <div class="row"><span>주소</span><span>${v.addr||''}</span></div>
+      <div class="row"><span>실거래 최고가</span><span><b>${fmtPrice(v.maxP)}</b>${v.fl?` (${v.fl}층)`:''}</span></div>
+      <div class="row"><span>최고가 거래일</span><span>${v.date||'-'}</span></div>
+      <div class="row"><span>전세 최고</span><span>${fmtPrice(v.rentP)}</span></div>
+      <div class="row"><span>공시가</span><span>${fmtPrice(v.offP)}</span></div>
+      <div class="row"><span>전용/공급</span><span>${fmtArea(v.pa)} / ${fmtArea(v.sa)}</span></div>
+      <div class="row"><span>세대수</span><span>${v.hh||'-'}세대${v.flMax?` (${v.flMax}층)`:''}</span></div>
+      <div class="row"><span>입주</span><span>${v.yr||'-'}</span></div>
+      <div class="row"><span>거래수(최근/전체)</span><span>${v.tcR??'-'} / ${v.tcA??'-'}</span></div>
+      <div class="row"><span>난방/구조</span><span>${v.heat||'-'} / ${v.aisle||'-'}</span></div>
+      ${v.co?`<div class="row"><span>시공</span><span>${v.co}</span></div>`:''}
+      <a href="https://hogangnono.com/apt/${v.id}" target="_blank">호갱노노에서 보기 →</a>
+    `, {maxWidth:300});
+    layer.addLayer(cm);
+    n++;
+  }
+  document.getElementById('count').textContent = n.toLocaleString();
+}
+
+function bindControls() {
+  const ids = ['price-min','price-max','area-min','area-max','hh-min','hh-max','sigungu','recency'];
+  function update() {
+    const pmin = document.getElementById('price-min'),
+          pmax = document.getElementById('price-max'),
+          amin = document.getElementById('area-min'),
+          amax = document.getElementById('area-max'),
+          hhmin = document.getElementById('hh-min'),
+          hhmax = document.getElementById('hh-max');
+    if (+pmin.value > +pmax.value) [pmin.value, pmax.value] = [pmax.value, pmin.value];
+    if (+amin.value > +amax.value) [amin.value, amax.value] = [amax.value, amin.value];
+    if (+hhmin.value > +hhmax.value) [hhmin.value, hhmax.value] = [hhmax.value, hhmin.value];
+    document.getElementById('price-label').textContent = `${(+pmin.value/10000).toFixed(1)}억 ~ ${(+pmax.value/10000).toFixed(1)}억`;
+    document.getElementById('area-label').textContent = (+amin.value === 0 && +amax.value === 200) ? '전체 평형'
+      : `전용 ${amin.value}㎡ ~ ${amax.value}㎡ (${(amin.value/3.305785).toFixed(0)}~${(amax.value/3.305785).toFixed(0)}평)`;
+    document.getElementById('hh-label').textContent =
+      (+hhmin.value === 0 && +hhmax.value === 3000) ? '전체 세대수'
+      : (+hhmax.value === 3000) ? `${hhmin.value}세대 이상`
+      : `${hhmin.value} ~ ${hhmax.value}세대`;
+    const cur = `${+hhmin.value},${+hhmax.value}`;
+    document.querySelectorAll('.preset').forEach(b => b.classList.toggle('active', b.dataset.hh === cur));
+    render();
+  }
+  ids.forEach(i => { const el = document.getElementById(i); el.addEventListener('input', update); el.addEventListener('change', update); });
+  document.querySelectorAll('.preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const [lo, hi] = btn.dataset.hh.split(',').map(Number);
+      document.getElementById('hh-min').value = lo;
+      document.getElementById('hh-max').value = hi;
+      update();
+    });
+  });
+  update();
+}
+
+fetch('data.json').then(r => r.json()).then(data => {
+  allApts = data;
+  document.getElementById('total').textContent = data.length.toLocaleString();
+  const sggs = [...new Set(allApts.map(v=>v.sgg).filter(Boolean))].sort();
+  const sel = document.getElementById('sigungu');
+  for (const s of sggs) { const o = document.createElement('option'); o.value=s; o.textContent=s; sel.appendChild(o); }
+  // approx data date = most recent date_max_real_trade
+  const dates = data.map(v => v.date).filter(Boolean).sort();
+  if (dates.length) document.getElementById('dataDate').textContent = '최신 거래 ' + dates[dates.length-1];
+  bindControls();
+  document.getElementById('loader').remove();
+}).catch(e => {
+  document.getElementById('loader').textContent = '데이터 로드 실패: ' + e.message;
+});
+</script>
+</body>
+</html>

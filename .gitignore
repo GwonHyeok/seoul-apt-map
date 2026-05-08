@@ -1,0 +1,24 @@
+# 큰 raw 파일들 (배포 X)
+desktop.js
+seoul_apts.json
+seoul_apts_v1.json
+seoul_under_15eok.csv
+seoul_under_15eok.json
+public_data.json
+
+# 캡처 로그
+crawl.log
+crawl2.log
+endpoints.txt
+routes.json
+requests/
+responses/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS
+.DS_Store
